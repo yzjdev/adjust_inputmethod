@@ -1,6 +1,5 @@
 package com.github.yzjdev.editor
 
-import android.os.Build
 import android.provider.Settings
 import android.text.TextUtils
 import android.util.Log
@@ -58,22 +57,17 @@ class CodeInputConnection(val editor: CodeEditText) : BaseInputConnection(editor
 
 
     override fun getExtractedText(
-        request: ExtractedTextRequest?,
+        request: ExtractedTextRequest,
         flags: Int
     ): ExtractedText {
+        log()
         editor.extractedTextRequest = request
         val et = ExtractedText()
-        editor.apply {
-            et.text = text
-            et.selectionStart = selectionStart
-            et.selectionEnd = selectionEnd
-            if (isShiftOn) et.flags = et.flags or ExtractedText.FLAG_SELECTING
-        }
+        editor.extractedText(et)
         return et
     }
 
     override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
-
         editor.apply {
             if (cursor >= length) return false
             doc.replace(cursor, 1, "")
@@ -86,22 +80,23 @@ class CodeInputConnection(val editor: CodeEditText) : BaseInputConnection(editor
     override fun getSelectedText(flags: Int): CharSequence? {
         val a = editor.minSelection
         val b = editor.maxSelection
-        if (a == b || a < 0) return null
+        if (a == b || a < 0) return ""
         return TextUtils.substring(editor.text, a, b)
     }
 
     override fun getTextAfterCursor(n: Int, flags: Int): CharSequence? {
+        log(n)
         val a = editor.minSelection
         var b = editor.maxSelection
         if (b < 0) {
             b = 0
         }
         val end = min(b + n, editor.length)
-
         return TextUtils.substring(editor.text, b, end)
     }
 
     override fun getTextBeforeCursor(n: Int, flags: Int): CharSequence? {
+        log(n)
         val a = editor.minSelection
         val b = editor.maxSelection
         if (a <= 0) return ""
@@ -113,7 +108,7 @@ class CodeInputConnection(val editor: CodeEditText) : BaseInputConnection(editor
     }
 
     override fun performContextMenuAction(id: Int): Boolean {
-
+        log(id)
         return when (id) {
             android.R.id.selectAll -> {
                 editor.selectAll()
@@ -147,37 +142,35 @@ class CodeInputConnection(val editor: CodeEditText) : BaseInputConnection(editor
     override fun sendKeyEvent(event: KeyEvent): Boolean {
         super.sendKeyEvent(event)
         if (event.action == KeyEvent.ACTION_DOWN) {
+            log(event)
             return editor.handleKeyDown(event)
         }
         return false
     }
 
     override fun setSelection(start: Int, end: Int): Boolean {
-        log("$start $end")
-        if (editor.length == 0) return false
-        if (isSougouInput()) return true
-        val len = editor.length
-        if (start > len || end > len || start < 0 || end < 0) {
-            return true
+        log("$start  $end  $currentInputMethod")
+        editor.apply {
+            when {
+                isXunfeiInput -> setSelection(cursor, cursor)
+            }
         }
-        editor.setSelection(start, end)
         return true
     }
 
 
-    fun isSougouInput(): Boolean {
-        val packageName = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            imm.currentInputMethodInfo?.packageName
-        } else {
-            // 兼容旧版本
-            val id = Settings.Secure.getString(
-                context.contentResolver,
-                Settings.Secure.DEFAULT_INPUT_METHOD
-            )
-            id?.split("/")?.getOrNull(0)
-        }
-        return packageName?.contains("com.sohu.inputmethod.sogou") ?: false// 搜狗输入法包名
-    }
+    val currentInputMethod: String
+        get() = Settings.Secure.getString(
+            context.contentResolver,
+            Settings.Secure.DEFAULT_INPUT_METHOD
+        )
 
+    val isSougouInput: Boolean get() = currentInputMethod.startsWith("com.sohu.inputmethod.sogou")
+
+
+    val isBaiduInput: Boolean get() = currentInputMethod.startsWith("com.baidu.input")
+
+
+    val isXunfeiInput: Boolean get() = currentInputMethod.startsWith("com.iflytek.inputmethod")
 
 }

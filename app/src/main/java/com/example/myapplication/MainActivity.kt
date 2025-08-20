@@ -1,6 +1,8 @@
 package com.example.myapplication
 
 import android.os.Bundle
+import android.provider.Settings
+import android.util.Log
 import android.view.Menu
 import android.view.MenuItem
 import android.view.inputmethod.InputMethodManager
@@ -33,7 +35,7 @@ class MainActivity : AppCompatActivity() {
 
         thread {
             var name = "test.txt"
-//            name = "TextView.java"
+            name = "TextView.java"
             val str = readText(assets.open(name))
             runOnUiThread {
                 binding.editor.text = str
@@ -47,6 +49,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreateOptionsMenu(menu: Menu?): Boolean {
         menu?.apply {
             add(0, 0, 0, "切换输入法").setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+            add(0,1,0,"查看输入法").setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
         }
         return super.onCreateOptionsMenu(menu)
     }
@@ -56,6 +59,13 @@ class MainActivity : AppCompatActivity() {
             0 -> {
                 val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
                 imm.showInputMethodPicker()
+            }
+            1 -> {
+                val id = Settings.Secure.getString(
+                    contentResolver,
+                    Settings.Secure.DEFAULT_INPUT_METHOD
+                )
+                Log.d(TAG, "softInput: $id")
             }
         }
         return super.onOptionsItemSelected(item)

@@ -24,12 +24,12 @@ import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputMethodManager
 import android.widget.Scroller
 import android.widget.Toast
-import androidx.core.content.ContextCompat
 import com.github.yzjdev.utils.dp
 import com.github.yzjdev.utils.sp
 import org.eclipse.jface.text.Document
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 class CodeEditText : View {
     val TAG = "aaa"
@@ -43,8 +43,8 @@ class CodeEditText : View {
 
     //光标与选区
     var cursor: Int = 0
-    var selectionStart = cursor
-    var selectionEnd = cursor
+    var selectionStart: Int = cursor
+    var selectionEnd: Int = cursor
 
     var extractedTextRequest: ExtractedTextRequest? = null
 
@@ -135,7 +135,6 @@ class CodeEditText : View {
     val textBackgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.LTGRAY
         alpha = 60
-        style = Paint.Style.FILL_AND_STROKE
     }
     val lineNumberPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.GRAY
@@ -145,7 +144,6 @@ class CodeEditText : View {
     val currentLineBackgroundPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.BLUE
         alpha = 60
-        style = Paint.Style.FILL_AND_STROKE
     }
 
 
@@ -161,8 +159,7 @@ class CodeEditText : View {
     val selectionPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.BLUE
         alpha = 128
-        strokeWidth = 2f.dp
-        style = Paint.Style.FILL_AND_STROKE
+
     }
 
     val paintList = mutableListOf(
@@ -193,262 +190,145 @@ class CodeEditText : View {
             drawRect(
                 0f,
                 scrollY.toFloat(),
-                lineNumberPanelWidth,
+                lineNumberPanelWidth.toFloat(),
                 (height + scrollY).toFloat(),
                 lineNumberBackgroundPaint
             )
-
+            //绘制文本背景
             drawRect(
-                lineNumberPanelWidth,
+                lineNumberPanelWidth.toFloat(),
                 scrollY.toFloat(),
                 (width + scrollX).toFloat(),
                 (scrollY + height).toFloat(),
                 textBackgroundPaint
             )
-            if (length == 0) { // 处理文本为空时光标的绘制
+
+            val lineNumberX = lineNumberWidth + lineNumberPadding / 2
+            if (length == 0) { // 文本为0 只绘制一行
                 drawText(
                     "1",
-                    lineNumberWidth + lineNumberPadding / 2,
+                    lineNumberX.toFloat(),
                     -textPaint.fontMetrics.ascent,
                     lineNumberPaint
                 )
                 drawLine(
-                    lineNumberPanelWidth,
+                    lineNumberPanelWidth.toFloat(),
                     0f,
-                    lineNumberPanelWidth,
-                    lineHeight,
+                    lineNumberPanelWidth.toFloat(),
+                    lineHeight.toFloat(),
                     cursorPaint
                 )
                 return
             }
 
-            val visibleStartLine: Int = max(0, (scrollY / lineHeight).toInt())
-            val visibleEndLine: Int = min(lineCount, ((scrollY + height) / lineHeight + 1).toInt())
+            val visibleStartLine: Int = max(0, scrollY / lineHeight)
+            val visibleEndLine: Int = min(lineCount, (scrollY + height) / lineHeight + 1)
 
             for (i in visibleStartLine until visibleEndLine) {
-                val lineTextBaseY = i * lineHeight - textPaint.fontMetrics.ascent //文本基线
-
+                val lineTextBaseY = i * lineHeight - textPaint.fontMetricsInt.ascent //文本基线
                 // 绘制行号
                 drawText(
                     "${i + 1}",
-                    lineNumberWidth + lineNumberPadding / 2,
-                    lineTextBaseY,
+                    lineNumberX.toFloat(),
+                    lineTextBaseY.toFloat(),
                     lineNumberPaint
                 )
 
-                val cursorLine = doc.getLineOfOffset(cursor)
-                if (cursorLine == i && !isShiftOn) {
-                    drawRect(
-                        lineNumberPanelWidth,
-                        cursorLine * lineHeight,
-                        (width + scrollX).toFloat(),
-                        (cursorLine + 1) * lineHeight,
-                        currentLineBackgroundPaint
-                    )
-                }
-
                 // 按行绘制文本
-
-                val lineStart = doc.getLineStart(i)
-                val lineLength = doc.getRealLineLength(i)
-                val lineText = doc.get(lineStart, lineLength)
-
+                val lineText = doc.getLineText(i)
                 val w = textPaint.measureText(lineText)
                 if (w > textMaxWidth) textMaxWidth = w.toInt()
-                drawText(lineText, lineNumberPanelWidth, lineTextBaseY, textPaint)
-
+                drawText(
+                    lineText,
+                    lineNumberPanelWidth.toFloat(),
+                    lineTextBaseY.toFloat(),
+                    textPaint
+                )
             }
 
             /**
              * 绘制光标
              */
-            if (isShiftOn) {
-                //选择状态
-                val handleLeft = ContextCompat.getDrawable(
-                    context, androidx.appcompat.R.drawable.abc_text_select_handle_left_mtrl
+            if (!isShiftOn) {
+                val line = doc.getLineOfOffset(cursor)
+                val lineStart = doc.getLineStart(line)
+                val text = doc.get(lineStart, cursor - lineStart)
+                val x = (lineNumberPanelWidth + measureText(text)).toFloat()
+                val y = (line * lineHeight).toFloat()
+                canvas.drawLine(x, y, x, y + lineHeight, cursorPaint)
+            }
+
+            //绘制选区
+            drawSelection(this, visibleStartLine, visibleEndLine)
+        }
+    }
+
+
+    fun drawSelection(canvas: Canvas, visibleStartLine: Int, visibleEndLine: Int) {
+        if (!isShiftOn) return
+        val a = minSelection
+        val b = maxSelection
+        val lineA = doc.getLineOfOffset(a)
+        val lineB = doc.getLineOfOffset(b)
+
+        if (lineB <= visibleStartLine) return
+        if (lineA >= visibleEndLine) return
+        val lineStartA = doc.getLineStart(lineA)
+        val lineStartB = doc.getLineStart(lineB)
+        val xA =
+            lineNumberPanelWidth + if (doc.getRealLineLength(lineA) == 0) 2.dp else measureText(
+                lineStartA,
+                a - lineStartA
+            )
+
+        val xB =
+            lineNumberPanelWidth + if (doc.getRealLineLength(lineB) == 0) 2.dp else measureText(
+                lineStartB,
+                b - lineStartB
+            )
+
+        val start = max(lineA, visibleStartLine)
+        val end = min(lineB, visibleEndLine)
+
+        val r = Rect() // 复用 Rect
+
+        canvas.apply {
+            if (lineA == lineB) {
+                // 单行选中
+                if (a == b) r.set(
+                    xA - 1.dp,
+                    lineA * lineHeight,
+                    xA + 1.dp,
+                    lineA * lineHeight + lineHeight
                 )
-                val handleRight = ContextCompat.getDrawable(
-                    context, androidx.appcompat.R.drawable.abc_text_select_handle_right_mtrl
-                )
-                val handleMiddle = ContextCompat.getDrawable(
-                    context, androidx.appcompat.R.drawable.abc_text_select_handle_middle_mtrl
-                )
-                //绘制选区
-                val startLine = doc.getLineOfOffset(selectionStart)
-                val endLine = doc.getLineOfOffset(selectionEnd)
-                if (selectionStart == selectionEnd) {
-                    val lineStart = doc.getLineOffset(startLine)
-                    val x = lineNumberWidth + lineNumberPadding + measureText(
-                        lineStart, selectionStart - lineStart
-                    )
-                    val y = startLine * lineHeight
-                    drawLine(
-                        x, y, x, y + lineHeight, selectionPaint
-                    )
-
-
-                    handleMiddle?.let {
-                        val width = it.intrinsicWidth
-                        val height = it.intrinsicHeight
-                        it.setBounds(
-                            (x - width / 2).toInt(),
-                            (y + lineHeight).toInt(),
-                            (x + width / 2).toInt(),
-                            (y + lineHeight + height).toInt()
-                        )
-                        it.draw(canvas)
-                    }
-
-                    return
-                }
-
-                fun drawWater() {
-                    val a = min(selectionStart, selectionEnd)
-                    val b = max(selectionStart, selectionEnd)
-                    val startLine = doc.getLineOfOffset(a)
-                    val endLine = doc.getLineOfOffset(b)
-                    val lineStartA = doc.getLineOffset(startLine)
-                    val lineStartB = doc.getLineOffset(endLine)
-                    var x = lineNumberWidth + lineNumberPadding + measureText(
-                        lineStartA, a - lineStartA
-                    )
-                    var y = startLine * lineHeight
-                    handleLeft?.let {
-                        val width = it.intrinsicWidth
-                        val height = it.intrinsicHeight
-                        it.setBounds(
-                            (x - width).toInt(),
-                            (y + lineHeight).toInt(),
-                            (x).toInt(),
-                            (y + lineHeight + height).toInt()
-                        )
-                        it.draw(canvas)
-                    }
-
-                    x = lineNumberWidth + lineNumberPadding + measureText(
-                        lineStartB, b - lineStartB
-                    )
-                    y = endLine * lineHeight
-                    handleRight?.let {
-                        val width = it.intrinsicWidth
-                        val height = it.intrinsicHeight
-                        it.setBounds(
-                            (x).toInt(),
-                            (y + lineHeight).toInt(),
-                            (x + width).toInt(),
-                            (y + lineHeight + height).toInt()
-                        )
-                        it.draw(canvas)
-                    }
-                }
-                drawWater()
-                if (startLine == endLine) {
-                    val line = startLine
-                    val lineStart = doc.getLineOffset(line)
-                    val aw = lineNumberPanelWidth + measureText(
-                        lineStart, selectionStart - lineStart
-                    )
-                    val ew = lineNumberPanelWidth + measureText(
-                        lineStart, selectionEnd - lineStart
-                    )
-                    drawRect(aw, line * lineHeight, ew, (line + 1) * lineHeight, selectionPaint)
-                } else {
-                    if (startLine < endLine) {
-                        drawRect(
-                            lineNumberWidth + lineNumberPadding + measureText(
-                                doc.getLineOffset(
-                                    startLine
-                                ), selectionStart - doc.getLineOffset(startLine)
-                            ),
-                            startLine * lineHeight,
-                            (width + scrollX).toFloat(),
-                            (startLine + 1) * lineHeight,
-                            selectionPaint
-                        )
-
-                        for (i in startLine + 1 until endLine) {
-                            drawRect(
-                                lineNumberWidth + lineNumberPadding,
-                                i * lineHeight,
-                                (width + scrollX).toFloat(),
-                                (i + 1) * lineHeight,
-                                selectionPaint
-                            )
-                        }
-                        drawRect(
-                            lineNumberWidth + lineNumberPadding,
-                            endLine * lineHeight,
-                            lineNumberWidth + lineNumberPadding + measureText(
-                                doc.getLineOffset(
-                                    endLine
-                                ), selectionEnd - doc.getLineOffset(endLine)
-                            ),
-                            (endLine + 1) * lineHeight,
-                            selectionPaint
-                        )
-                    }
-
-                    if (startLine > endLine) {
-                        drawRect(
-                            lineNumberWidth + lineNumberPadding,
-                            startLine * lineHeight,
-                            lineNumberWidth + lineNumberPadding + measureText(
-                                doc.getLineOffset(
-                                    startLine
-                                ), selectionStart - doc.getLineOffset(startLine)
-                            ),
-                            (startLine + 1) * lineHeight,
-                            selectionPaint
-                        )
-
-                        for (i in startLine - 1 downTo endLine + 1) {
-                            drawRect(
-                                lineNumberWidth + lineNumberPadding,
-                                i * lineHeight,
-                                (width + scrollX).toFloat(),
-                                (i + 1) * lineHeight,
-                                selectionPaint
-                            )
-                        }
-
-                        drawRect(
-                            lineNumberWidth + lineNumberPadding + measureText(
-                                doc.getLineOffset(
-                                    endLine
-                                ), selectionEnd - doc.getLineOffset(endLine)
-                            ),
-                            endLine * lineHeight,
-                            (width + scrollX).toFloat(),
-                            (endLine + 1) * lineHeight,
-                            selectionPaint
-                        )
-                    }
-                }
-
+                else r.set(xA, lineA * lineHeight, xB, lineA * lineHeight + lineHeight)
+                drawRect(r, selectionPaint)
             } else {
-                //非选择状态
-                if (cursor == 0) {
-                    drawLine(
+                // 第一行
+                r.set(xA, start * lineHeight, scrollX + width, start * lineHeight + lineHeight)
+                drawRect(r, selectionPaint)
+
+                // 中间整行
+                if (start + 1 < end) {
+                    r.set(
                         lineNumberPanelWidth,
-                        0f,
-                        lineNumberPanelWidth,
-                        lineHeight,
-                        cursorPaint
+                        (start + 1) * lineHeight,
+                        scrollX + width,
+                        end * lineHeight
                     )
-                } else {
-                    val line = doc.getLineOfOffset(cursor)
-                    val lineStart = doc.getLineStart(line)
-                    val len = cursor - lineStart
-                    val x = lineNumberPanelWidth + measureText(lineStart, len)
-                    drawLine(x, line * lineHeight, x, (line + 1) * lineHeight, cursorPaint)
+                    drawRect(r, selectionPaint)
                 }
+
+                // 最后一行
+                r.set(lineNumberPanelWidth, end * lineHeight, xB, end * lineHeight + lineHeight)
+                drawRect(r, selectionPaint)
             }
         }
     }
 
     //统一用textPaint测量字符宽度
     fun measureText(pos: Int, length: Int) = measureText(doc.get(pos, length))
-    fun measureText(text: String) = textPaint.measureText(text)
+    fun measureText(text: String) = textPaint.measureText(text).roundToInt()
 
     override fun onCheckIsTextEditor() = true
 
@@ -493,20 +373,20 @@ class CodeEditText : View {
     val length: Int
         get() = doc.length
 
-    private val lineNumberWidth: Float
+    private val lineNumberWidth: Int
         get() = measureText("$lineCount")
 
-    var lineNumberPadding: Float = 16f.dp
+    var lineNumberPadding: Int = 16.dp
         set(value) {
-            field = value.coerceIn(16f.dp, 32f.dp)
+            field = value.coerceIn(16.dp, 32.dp)
             invalidate()
         }
 
-    private val lineNumberPanelWidth: Float
+    private val lineNumberPanelWidth: Int
         get() = lineNumberWidth + lineNumberPadding
 
-    val lineHeight: Float
-        get() = textPaint.fontMetrics.run {
+    val lineHeight: Int
+        get() = textPaint.fontMetricsInt.run {
             bottom - top
         }
 
@@ -548,7 +428,6 @@ class CodeEditText : View {
     }
 
     fun clearMetaKeyStates(states: Int): Boolean {
-
         if (states == 193 && isShiftOn) {
             isShiftOn = false
             selectionStart = selectionEnd
@@ -562,15 +441,8 @@ class CodeEditText : View {
 
 
     fun handleKeyDown(event: KeyEvent): Boolean {
-        Log.d(TAG, "handleKeyDown: $event")
-
         when (event.keyCode) {
-            KeyEvent.KEYCODE_DPAD_LEFT,
-            KeyEvent.KEYCODE_DPAD_RIGHT,
-            KeyEvent.KEYCODE_DPAD_UP,
-            KeyEvent.KEYCODE_DPAD_DOWN,
-            KeyEvent.KEYCODE_MOVE_HOME,
-            KeyEvent.KEYCODE_MOVE_END -> isShiftOn = event.isShiftPressed
+            KeyEvent.KEYCODE_SHIFT_LEFT -> isShiftOn = true
         }
         return when (event.keyCode) {
             KeyEvent.KEYCODE_DEL -> {
@@ -637,15 +509,33 @@ class CodeEditText : View {
 
 
     fun updateImmExtractedText() {
-
         val et = ExtractedText()
-        et.text = text
-        et.selectionStart = selectionStart
-        et.selectionEnd = selectionEnd
-        if (isShiftOn) et.flags = et.flags or ExtractedText.FLAG_SELECTING
+        extractedText(et)
         imm.updateExtractedText(this, extractedTextRequest?.token ?: 0, et)
 
     }
+
+    fun extractedText(et: ExtractedText): ExtractedText {
+        val isBaidu = inputConnection.isBaiduInput
+        // 处理百度输入法
+        if (isBaidu) {
+            et.text = text
+            et.selectionStart = minSelection
+            et.selectionEnd = maxSelection
+            if (isShiftOn) et.flags = et.flags or ExtractedText.FLAG_SELECTING
+            return et
+        }
+
+        // 处理非百度输入法的文本提取
+        et.text = "text"
+        // 设置选择范围
+        et.selectionStart = minSelection
+        et.selectionEnd = maxSelection
+        if (isShiftOn) et.flags = et.flags or ExtractedText.FLAG_SELECTING
+
+        return et
+    }
+
 
     /**
      * 实现scrollToVisible
@@ -824,11 +714,17 @@ class CodeEditText : View {
         invalidate()
     }
 
+    val isAllSelected: Boolean
+        get() = minSelection == 0 && maxSelection == length
+
+
     fun selectAll() {
+
         isShiftOn = true
         cursor = length
         selectionStart = 0
         selectionEnd = length
+        Log.d(TAG, "selectAll: $minSelection   $maxSelection")
         updateImm()
         scrollToVisible()
         invalidate()
@@ -858,15 +754,23 @@ class CodeEditText : View {
     fun cut() {
         val text = getSelectedText()
         if (text == null) return
-        doc.replace(minSelection, maxSelection - minSelection, "")
-        cursor = minSelection
-        selectionStart = cursor
-        selectionEnd = cursor
+        try {
+            val clipboard = context.getSystemService(ClipboardManager::class.java)
+            val clip = ClipData.newPlainText("", text)
+            clipboard.setPrimaryClip(clip)
+            doc.replace(minSelection, maxSelection - minSelection, "")
+            isShiftOn = false
+            cursor = minSelection
+            selectionStart = cursor
+            selectionEnd = cursor
+            updateImm()
+            scrollToVisible()
+            invalidate()
+            Toast.makeText(context, "已写入剪切板", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Toast.makeText(context, "文本太大了，无法写入剪切板", Toast.LENGTH_SHORT).show()
+        }
 
-        copy(text)
-        updateImm()
-        scrollToVisible()
-        invalidate()
     }
 
     fun paste() {

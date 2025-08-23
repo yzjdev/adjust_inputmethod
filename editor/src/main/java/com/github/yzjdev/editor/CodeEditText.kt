@@ -1,5 +1,6 @@
 package com.github.yzjdev.editor
 
+import android.annotation.SuppressLint
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -12,7 +13,6 @@ import android.text.InputType
 import android.text.TextPaint
 import android.text.TextUtils
 import android.util.AttributeSet
-import android.util.Log
 import android.view.GestureDetector
 import android.view.Gravity
 import android.view.KeyEvent
@@ -53,6 +53,11 @@ class CodeEditText : View, Editor {
     constructor(context: Context) : this(context, null)
     constructor(context: Context, attrs: AttributeSet?) : super(context, attrs)
 
+    init {
+        viewTreeObserver.addOnGlobalLayoutListener {
+            if (imm.isActive(this)) scrollToVisible()
+        }
+    }
 
     var doc = Document()
     val imm = context.getSystemService(InputMethodManager::class.java)
@@ -106,7 +111,7 @@ class CodeEditText : View, Editor {
 
     val selectionPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.BLUE
-        alpha = 128
+        alpha = 30
 
     }
 
@@ -132,85 +137,66 @@ class CodeEditText : View, Editor {
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        canvas.apply {
+        // 绘制行号背景
+        drawLineNumberBackground(canvas)
+        //绘制文本背景
+        drawTextBackground(canvas)
+        //可见行
+        val visibleStartLine = max(0, scrollY / lineHeight)
+        val visibleEndLine = min(lineCount, (scrollY + height) / lineHeight + 1)
+        //绘制行号和文本
+        drawText(canvas, visibleStartLine, visibleEndLine)
+        //绘制光标
+        drawCursor(canvas)
+        //绘制选区
+        drawSelection(canvas, visibleStartLine, visibleEndLine)
+    }
 
-            // 绘制行号背景
-            drawRect(
-                0f,
-                scrollY.toFloat(),
-                lineNumberPanelWidth.toFloat(),
-                (height + scrollY).toFloat(),
-                lineNumberBackgroundPaint
+    fun drawLineNumberBackground(canvas: Canvas) {
+        val r = Rect()
+        r.set(0, scrollY, lineNumberPanelWidth, scrollY + height)
+        canvas.drawRect(r, lineNumberBackgroundPaint)
+    }
+
+    fun drawTextBackground(canvas: Canvas) {
+        val r = Rect()
+        r.set(lineNumberPanelWidth, scrollY, width + scrollX, scrollY + height)
+        canvas.drawRect(r, textBackgroundPaint)
+    }
+
+    fun drawText(canvas: Canvas, visibleStartLine: Int, visibleEndLine: Int) {
+        val lineNumberX = lineNumberWidth + lineNumberPadding / 2
+        for (i in visibleStartLine until visibleEndLine) {
+            val lineTextBaseY = i * lineHeight - textPaint.fontMetricsInt.ascent //文本基线
+            // 绘制行号
+            canvas.drawText(
+                "${i + 1}",
+                lineNumberX.toFloat(),
+                lineTextBaseY.toFloat(),
+                lineNumberPaint
             )
-            //绘制文本背景
-            drawRect(
+            // 按行绘制文本
+            val lineText = doc.getLineText(i)
+            canvas.drawText(
+                lineText,
                 lineNumberPanelWidth.toFloat(),
-                scrollY.toFloat(),
-                (width + scrollX).toFloat(),
-                (scrollY + height).toFloat(),
-                textBackgroundPaint
+                lineTextBaseY.toFloat(),
+                textPaint
             )
-
-            val lineNumberX = lineNumberWidth + lineNumberPadding / 2
-            if (length == 0) { // 文本为0 只绘制一行
-                drawText(
-                    "1",
-                    lineNumberX.toFloat(),
-                    -textPaint.fontMetrics.ascent,
-                    lineNumberPaint
-                )
-                drawLine(
-                    lineNumberPanelWidth.toFloat(),
-                    0f,
-                    lineNumberPanelWidth.toFloat(),
-                    lineHeight.toFloat(),
-                    cursorPaint
-                )
-                return
-            }
-
-            val visibleStartLine: Int = max(0, scrollY / lineHeight)
-            val visibleEndLine: Int = min(lineCount, (scrollY + height) / lineHeight + 1)
-
-            for (i in visibleStartLine until visibleEndLine) {
-                val lineTextBaseY = i * lineHeight - textPaint.fontMetricsInt.ascent //文本基线
-                // 绘制行号
-                drawText(
-                    "${i + 1}",
-                    lineNumberX.toFloat(),
-                    lineTextBaseY.toFloat(),
-                    lineNumberPaint
-                )
-
-                // 按行绘制文本
-                val lineText = doc.getLineText(i)
-                val w = textPaint.measureText(lineText)
-                if (w > textMaxWidth) textMaxWidth = w.toInt()
-                drawText(
-                    lineText,
-                    lineNumberPanelWidth.toFloat(),
-                    lineTextBaseY.toFloat(),
-                    textPaint
-                )
-            }
-
-            /**
-             * 绘制光标
-             */
-            if (!isShiftOn) {
-                val line = doc.getLineOfOffset(cursor)
-                val lineStart = doc.getLineStart(line)
-                val text = doc.get(lineStart, cursor - lineStart)
-                val x = (lineNumberPanelWidth + measureText(text)).toFloat()
-                val y = (line * lineHeight).toFloat()
-                canvas.drawLine(x, y, x, y + lineHeight, cursorPaint)
-            }
-
-            //绘制选区
-            drawSelection(this, visibleStartLine, visibleEndLine)
+            val w = measureText(lineText)
+            if (w > textMaxWidth) textMaxWidth = w
         }
     }
 
+    fun drawCursor(canvas: Canvas) {
+        if (isShiftOn) return
+        val line = doc.getLineOfOffset(cursor)
+        val lineStart = doc.getLineStart(line)
+        val text = doc.get(lineStart, cursor - lineStart)
+        val x = (lineNumberPanelWidth + measureText(text)).toFloat()
+        val y = (line * lineHeight).toFloat()
+        canvas.drawLine(x, y, x, y + lineHeight, cursorPaint)
+    }
 
     fun drawSelection(canvas: Canvas, visibleStartLine: Int, visibleEndLine: Int) {
         if (!isShiftOn) return
@@ -218,59 +204,40 @@ class CodeEditText : View, Editor {
         val b = maxSelection
         val lineA = doc.getLineOfOffset(a)
         val lineB = doc.getLineOfOffset(b)
-
         if (lineB < visibleStartLine) return
         if (lineA > visibleEndLine) return
         val lineStartA = doc.getLineStart(lineA)
         val lineStartB = doc.getLineStart(lineB)
-        val xA =
-            lineNumberPanelWidth + if (doc.getRealLineLength(lineA) == 0) 2.dp else measureText(
-                lineStartA,
-                a - lineStartA
-            )
-
-        val xB =
-            lineNumberPanelWidth + if (doc.getRealLineLength(lineB) == 0) 2.dp else measureText(
-                lineStartB,
-                b - lineStartB
-            )
-
+        val xA = lineNumberPanelWidth + measureText(lineStartA, a - lineStartA)
+        val xB = lineNumberPanelWidth + if (b == lineStartB) 2.dp
+        else measureText(lineStartB, b - lineStartB)
         val start = max(lineA, visibleStartLine)
         val end = min(lineB, visibleEndLine)
-
         val r = Rect() // 复用 Rect
-
-        canvas.apply {
-            if (lineA == lineB) {
-                // 单行选中
-                if (a == b) r.set(
-                    xA - 1.dp,
-                    lineA * lineHeight,
-                    xA + 1.dp,
-                    lineA * lineHeight + lineHeight
+        if (lineA == lineB) {
+            // 单行选中
+            if (a == b)
+                r.set(xA - 1.dp, lineA * lineHeight, xA + 1.dp, lineA * lineHeight + lineHeight)
+            else
+                r.set(xA, lineA * lineHeight, xB, lineA * lineHeight + lineHeight)
+            canvas.drawRect(r, selectionPaint)
+        } else {
+            // 第一行
+            r.set(xA, start * lineHeight, scrollX + width, start * lineHeight + lineHeight)
+            canvas.drawRect(r, selectionPaint)
+            // 中间整行
+            if (start + 1 < end) {
+                r.set(
+                    lineNumberPanelWidth,
+                    (start + 1) * lineHeight,
+                    scrollX + width,
+                    end * lineHeight
                 )
-                else r.set(xA, lineA * lineHeight, xB, lineA * lineHeight + lineHeight)
-                drawRect(r, selectionPaint)
-            } else {
-                // 第一行
-                r.set(xA, start * lineHeight, scrollX + width, start * lineHeight + lineHeight)
-                drawRect(r, selectionPaint)
-
-                // 中间整行
-                if (start + 1 < end) {
-                    r.set(
-                        lineNumberPanelWidth,
-                        (start + 1) * lineHeight,
-                        scrollX + width,
-                        end * lineHeight
-                    )
-                    drawRect(r, selectionPaint)
-                }
-
-                // 最后一行
-                r.set(lineNumberPanelWidth, end * lineHeight, xB, end * lineHeight + lineHeight)
-                drawRect(r, selectionPaint)
+                canvas.drawRect(r, selectionPaint)
             }
+            // 最后一行
+            r.set(lineNumberPanelWidth, end * lineHeight, xB, end * lineHeight + lineHeight)
+            canvas.drawRect(r, selectionPaint)
         }
     }
 
@@ -294,6 +261,7 @@ class CodeEditText : View, Editor {
         return inputConnection
     }
 
+    @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
         gestureDetector.onTouchEvent(event)
         return true
@@ -377,25 +345,11 @@ class CodeEditText : View, Editor {
             selectionStart = start
             selectionEnd = start
         }
-        updateImm()
-        scrollToVisible()
-        invalidate()
-    }
-
-    fun clearMetaKeyStates(states: Int): Boolean {
-        if (states == 193 && isShiftOn) {
-            isShiftOn = false
-            selectionStart = selectionEnd
-            updateImm()
-            scrollToVisible()
-            invalidate()
-            return true
-        }
-        return false
+        refreshEditor()
     }
 
     fun handleKeyDown(event: KeyEvent): Boolean {
-        Log.d(TAG, "handleKeyDown: $event")
+
         when (event.keyCode) {
             KeyEvent.KEYCODE_DPAD_LEFT,
             KeyEvent.KEYCODE_DPAD_RIGHT,
@@ -458,18 +412,22 @@ class CodeEditText : View, Editor {
     /**
      * imm 实现
      */
-    fun updateImm() {
-        updateImmSelection()
-//        updateImmAnchorInfo()
-        updateImmExtractedText()
-
+    fun refreshEditor() {
+        updateImm()
+        scrollToVisible()
+        invalidate()
     }
 
-    fun updateImmSelection() {
+    private fun updateImm() {
+        updateImmSelection()
+        updateImmExtractedText()
+    }
+
+    private fun updateImmSelection() {
         imm.updateSelection(this, selectionStart, selectionEnd, -1, -1)
     }
 
-    fun updateImmExtractedText() {
+    private fun updateImmExtractedText() {
         imm.updateExtractedText(this, extractedRequestToken, getExtractedText())
     }
 
@@ -488,7 +446,7 @@ class CodeEditText : View, Editor {
     /**
      * 实现scrollToVisible
      */
-    fun scrollToVisible() {
+    private fun scrollToVisible() {
         val line = doc.getLineOfOffset(cursor)
         val lineStart = doc.getLineStart(line)
         val len = cursor - lineStart
@@ -515,37 +473,28 @@ class CodeEditText : View, Editor {
         // 水平方向滚动
         val H_MARGIN = lineNumberPanelWidth // 光标左右留一点空隙
         if (cursorX < visibleLeft + H_MARGIN) {
-            targetX = (cursorX - H_MARGIN).toInt()
+            targetX = (cursorX - H_MARGIN)
         } else if (cursorX > visibleRight - H_MARGIN) {
-            targetX = (cursorX + H_MARGIN - width).toInt()
+            targetX = (cursorX + H_MARGIN - width)
         }
 
         if (cursorTop < visibleTop) {
-            targetY = cursorTop.toInt()
+            targetY = cursorTop
         } else if (cursorBottom > visibleBottom) {
-            targetY = (cursorBottom - rect.height() + lineHeight + height / 2)
+            targetY = (cursorBottom - rect.height() + lineHeight)
         }
-
 
         if (targetX != scrollX || targetY != scrollY) {
             scroller.startScroll(
                 scrollX,
                 scrollY,
                 targetX - scrollX,
-                targetY - scrollY,
-                200
-            ) // 200ms 动画
-            invalidate() // 触发 computeScroll()
-
+                targetY - scrollY
+            )
+            invalidate()
         }
     }
 
-    override fun onAttachedToWindow() {
-        super.onAttachedToWindow()
-        viewTreeObserver.addOnGlobalLayoutListener {
-            scrollToVisible()
-        }
-    }
 
     /**
      * 光标移动实现
@@ -619,9 +568,7 @@ class CodeEditText : View, Editor {
             selectionStart = cursor
             selectionEnd = cursor
         }
-        updateImm()
-        scrollToVisible()
-        invalidate()
+        refreshEditor()
 
     }
 
@@ -651,18 +598,15 @@ class CodeEditText : View, Editor {
     }
 
     override fun selectAll() {
-        Log.d(TAG, "selectAll: ")
         isShiftOn = true
         cursor = length
         selectionStart = 0
         selectionEnd = length
-        updateImm()
-        scrollToVisible()
-        invalidate()
+        refreshEditor()
     }
 
     override fun copy() {
-        Log.d(TAG, "copy: ")
+
         if (selectionStart == selectionEnd) return
         try {
             val text = doc.get(minSelection, maxSelection - minSelection)
@@ -676,13 +620,13 @@ class CodeEditText : View, Editor {
             selectionEnd = cursor
             updateImm()
             invalidate()
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             Toast.makeText(context, "${length}个字符，你要撑死我吗", Toast.LENGTH_SHORT).show()
         }
     }
 
     override fun cut() {
-        Log.d(TAG, "cut: ")
+
         if (selectionStart == selectionEnd) return
         try {
             val text = doc.get(minSelection, maxSelection - minSelection)
@@ -694,16 +638,14 @@ class CodeEditText : View, Editor {
             cursor = minSelection
             selectionStart = cursor
             selectionEnd = cursor
-            updateImm()
-            scrollToVisible()
-            invalidate()
-        } catch (e: Exception) {
+            refreshEditor()
+        } catch (_: Exception) {
             Toast.makeText(context, "${length}个字符，你要撑死我吗", Toast.LENGTH_SHORT).show()
         }
     }
 
     override fun paste() {
-        Log.d(TAG, "paste: ")
+
         val cm = context.getSystemService(ClipboardManager::class.java)
         val clipData = cm.primaryClip
         val text = clipData?.getItemAt(0)?.text?.toString()
@@ -712,9 +654,7 @@ class CodeEditText : View, Editor {
         cursor = minSelection + text.length
         selectionStart = cursor
         selectionEnd = cursor
-        updateImm()
-        scrollToVisible()
-        invalidate()
+        refreshEditor()
     }
 
     override fun insert(text: CharSequence) {
@@ -724,41 +664,34 @@ class CodeEditText : View, Editor {
             cursor = minSelection + text.length
             selectionStart = cursor
             selectionEnd = cursor
-            updateImm()
-            scrollToVisible()
-            invalidate()
+            refreshEditor()
         } else {
             if (text.isNotEmpty()) {
                 doc.replace(cursor, 0, text.toString())
                 cursor = cursor + text.length
                 selectionStart = cursor
                 selectionEnd = cursor
-                updateImm()
-                scrollToVisible()
-                invalidate()
+                refreshEditor()
             }
         }
     }
 
     override fun delete() {
+
         if (isShiftOn) {
             doc.replace(minSelection, maxSelection - minSelection, "")
             isShiftOn = false
             cursor = minSelection
             selectionStart = cursor
             selectionEnd = cursor
-            updateImm()
-            scrollToVisible()
-            invalidate()
+            refreshEditor()
         } else {
             if (cursor <= 0) return
             doc.replace(cursor - 1, 1, "")
             cursor = cursor - 1
             selectionStart = cursor
             selectionEnd = cursor
-            updateImm()
-            scrollToVisible()
-            invalidate()
+            refreshEditor()
         }
     }
 
@@ -776,6 +709,7 @@ class CodeEditText : View, Editor {
     override fun redo() {
 
     }
+
 
     fun getSelectedText(): CharSequence? {
         val a = minSelection
@@ -905,9 +839,7 @@ class GestureListener(val editor: CodeEditText) : GestureDetector.SimpleOnGestur
             if (isShiftOn) {
                 isShiftOn = false
             }
-            updateImm()
-            scrollToVisible()
-            invalidate()
+            refreshEditor()
         }
         return true
     }

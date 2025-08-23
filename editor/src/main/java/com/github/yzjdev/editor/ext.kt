@@ -6,7 +6,8 @@ import java.time.format.DateTimeFormatter
 
 val TAG = "aaa"
 
-var debug = true
+var debug: Boolean = false
+
 fun log(vararg msg: Any) {
     if (!debug) return
     val sb = StringBuilder()
@@ -14,9 +15,10 @@ fun log(vararg msg: Any) {
     val now = LocalDateTime.now()
     val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS")
     val time = now.format(formatter)
-    sb.append("[ $time ]")
-        .append(" -> ")
-        .append("$methodName")
+    sb
+//        .append("[ $time ]")
+//        .append(" -> ")
+        .append("[ $methodName ]")
         .append("\n")
     msg.forEach {
         sb.append("    $it")

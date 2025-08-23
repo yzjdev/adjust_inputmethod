@@ -1,0 +1,5 @@
+* text=auto eol=lf
+; 针对特定类型文件
+; *.kt text eol=lf
+; *.java text eol=lf
+; *.xml text eol=lf

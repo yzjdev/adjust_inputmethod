@@ -2,8 +2,6 @@ package com.example.myapplication
 
 import android.graphics.Color
 import android.os.Bundle
-import android.provider.Settings
-import android.util.Log
 import android.view.Menu
 import android.view.MenuItem
 import android.view.inputmethod.InputMethodManager
@@ -14,6 +12,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import com.example.myapplication.databinding.ActivityMainBinding
 import com.github.yzjdev.editor.CodeEditText
+import com.github.yzjdev.editor.debug
 import java.io.BufferedReader
 import java.io.InputStream
 import java.io.InputStreamReader
@@ -38,8 +37,8 @@ class MainActivity : AppCompatActivity() {
 
         thread {
             var name = "test.txt"
-//            name = "TextView.java"
-            name = "test2.txt"
+            name = "TextView.java"
+//            name = "test2.txt"
             val str = readText(assets.open(name))
             runOnUiThread {
                 binding.editor.text = str
@@ -74,7 +73,10 @@ class MainActivity : AppCompatActivity() {
     override fun onCreateOptionsMenu(menu: Menu?): Boolean {
         menu?.apply {
             add(0, 0, 0, "切换输入法").setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
-            add(0, 1, 0, "查看输入法").setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+            add(0, 1, 0, "开启调试").apply {
+                isCheckable = true
+                isChecked = debug
+            }.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
         }
         return super.onCreateOptionsMenu(menu)
     }
@@ -87,11 +89,10 @@ class MainActivity : AppCompatActivity() {
             }
 
             1 -> {
-                val id = Settings.Secure.getString(
-                    contentResolver,
-                    Settings.Secure.DEFAULT_INPUT_METHOD
-                )
-                Log.d(TAG, "softInput: $id")
+                item.isChecked = !item.isChecked
+                item.title = if (item.isChecked) "关闭调试" else "开启调试"
+                debug = item.isChecked
+
             }
         }
         return super.onOptionsItemSelected(item)

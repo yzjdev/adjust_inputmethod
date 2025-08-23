@@ -5,7 +5,7 @@ import com.github.yzjdev.editor.CodeEditText
 class SougouInputConnection(editor: CodeEditText) : EditableInputConnection(editor) {
 
     override val maxChars: Int
-        get() = 500_000
+        get() = 300000
     override fun clearMetaKeyStates(states: Int): Boolean {
         if (states == 193){
             editor.apply {
@@ -13,9 +13,7 @@ class SougouInputConnection(editor: CodeEditText) : EditableInputConnection(edit
                 cursor = selectionEnd
                 selectionStart = cursor
                 selectionEnd = cursor
-                updateImm()
-                scrollToVisible()
-                invalidate()
+                refreshEditor()
             }
             return true
         }

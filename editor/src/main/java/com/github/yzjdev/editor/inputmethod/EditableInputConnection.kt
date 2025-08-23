@@ -13,7 +13,6 @@ import android.view.inputmethod.ExtractedText
 import android.view.inputmethod.ExtractedTextRequest
 import android.view.inputmethod.InputContentInfo
 import com.github.yzjdev.editor.CodeEditText
-import com.github.yzjdev.editor.ext.currentInputMethod
 import com.github.yzjdev.editor.log
 
 open class EditableInputConnection(
@@ -30,22 +29,22 @@ open class EditableInputConnection(
         get() = editor.length
 
     override fun beginBatchEdit(): Boolean {
-//        log(context.currentInputMethod)
+//        log()
         return super.beginBatchEdit()
     }
 
     override fun clearMetaKeyStates(states: Int): Boolean {
-        log(context.currentInputMethod)
+        log(states)
         return super.clearMetaKeyStates(states)
     }
 
     override fun closeConnection() {
-        log(context.currentInputMethod)
+        log()
         return super.closeConnection()
     }
 
     override fun commitCompletion(text: CompletionInfo?): Boolean {
-        log(context.currentInputMethod)
+        log()
         return super.commitCompletion(text)
     }
 
@@ -54,12 +53,12 @@ open class EditableInputConnection(
         flags: Int,
         opts: Bundle?
     ): Boolean {
-        log(context.currentInputMethod)
+        log()
         return super.commitContent(inputContentInfo, flags, opts)
     }
 
     override fun commitCorrection(correctionInfo: CorrectionInfo?): Boolean {
-        log(context.currentInputMethod)
+        log()
         return super.commitCorrection(correctionInfo)
     }
 
@@ -67,7 +66,7 @@ open class EditableInputConnection(
         text: CharSequence,
         newCursorPosition: Int
     ): Boolean {
-        log(context.currentInputMethod, text.length)
+        log(text.length)
         editor.insert(text)
         return true
     }
@@ -76,7 +75,7 @@ open class EditableInputConnection(
         beforeLength: Int,
         afterLength: Int
     ): Boolean {
-        log(context.currentInputMethod, "$beforeLength  $afterLength")
+        log("$beforeLength  $afterLength")
         return super.deleteSurroundingText(beforeLength, afterLength)
     }
 
@@ -84,22 +83,22 @@ open class EditableInputConnection(
         beforeLength: Int,
         afterLength: Int
     ): Boolean {
-        log(context.currentInputMethod)
+        log()
         return super.deleteSurroundingTextInCodePoints(beforeLength, afterLength)
     }
 
     override fun endBatchEdit(): Boolean {
-//        log(context.currentInputMethod)
+//        log()
         return super.endBatchEdit()
     }
 
     override fun finishComposingText(): Boolean {
-        log(context.currentInputMethod)
+        log()
         return super.finishComposingText()
     }
 
     override fun getCursorCapsMode(reqModes: Int): Int {
-        log(context.currentInputMethod)
+        log()
         return super.getCursorCapsMode(reqModes)
     }
 
@@ -107,18 +106,18 @@ open class EditableInputConnection(
         request: ExtractedTextRequest,
         flags: Int
     ): ExtractedText? {
-        log(context.currentInputMethod)
+        log()
         editor.extractedRequestToken = request.token
         return editor.getExtractedText()
     }
 
     override fun getHandler(): Handler? {
-//        log(context.currentInputMethod)
+//        log()
         return Handler(Looper.getMainLooper())
     }
 
     override fun getSelectedText(flags: Int): CharSequence? {
-        log(context.currentInputMethod)
+        log()
         editor.apply {
             if (isShiftOn && selectionStart != selectionEnd) {
                 return doc.get(minSelection, maxSelection - minSelection)
@@ -128,7 +127,7 @@ open class EditableInputConnection(
     }
 
     override fun getTextAfterCursor(n: Int, flags: Int): CharSequence? {
-        log(context.currentInputMethod)
+        log()
         editor.apply {
             if (cursor < length) return doc.get(cursor, 1)
         }
@@ -136,7 +135,7 @@ open class EditableInputConnection(
     }
 
     override fun getTextBeforeCursor(n: Int, flags: Int): CharSequence? {
-        log(context.currentInputMethod)
+        log()
         editor.apply {
             if (cursor > 0) return doc.get(cursor - 1, 1)
         }
@@ -144,7 +143,7 @@ open class EditableInputConnection(
     }
 
     override fun performContextMenuAction(id: Int): Boolean {
-        log(context.currentInputMethod)
+        log()
         editor.apply {
             val z: Boolean = when (id) {
                 R.id.selectAll -> {
@@ -176,7 +175,7 @@ open class EditableInputConnection(
     }
 
     override fun performEditorAction(editorAction: Int): Boolean {
-        log(context.currentInputMethod)
+        log()
         return super.performEditorAction(editorAction)
     }
 
@@ -184,22 +183,22 @@ open class EditableInputConnection(
         action: String?,
         data: Bundle?
     ): Boolean {
-        log(context.currentInputMethod)
+        log()
         return super.performPrivateCommand(action, data)
     }
 
     override fun reportFullscreenMode(enabled: Boolean): Boolean {
-        log(context.currentInputMethod)
+        log()
         return super.reportFullscreenMode(enabled)
     }
 
     override fun requestCursorUpdates(cursorUpdateMode: Int): Boolean {
-        log(context.currentInputMethod)
+        log()
         return super.requestCursorUpdates(cursorUpdateMode)
     }
 
     override fun sendKeyEvent(event: KeyEvent): Boolean {
-        log(context.currentInputMethod, event)
+        log(event)
         if (event.action == KeyEvent.ACTION_DOWN) {
             val z = editor.handleKeyDown(event)
             return z
@@ -208,7 +207,7 @@ open class EditableInputConnection(
     }
 
     override fun setComposingRegion(start: Int, end: Int): Boolean {
-        log(context.currentInputMethod)
+        log()
         return super.setComposingRegion(start, end)
     }
 
@@ -216,12 +215,12 @@ open class EditableInputConnection(
         text: CharSequence?,
         newCursorPosition: Int
     ): Boolean {
-        log(context.currentInputMethod)
+        log()
         return super.setComposingText(text, newCursorPosition)
     }
 
     override fun setSelection(start: Int, end: Int): Boolean {
-        log(context.currentInputMethod, "$start  $end  ${editor.length}")
+        log("$start  $end  ${editor.length}")
         if (start != end && end - start == maxChars) {
             return performContextMenuAction(android.R.id.selectAll)
         }
@@ -231,9 +230,7 @@ open class EditableInputConnection(
             cursor = end
             selectionStart = start
             selectionEnd = end
-            updateImm()
-            scrollToVisible()
-            invalidate()
+            refreshEditor()
         }
         return true
     }

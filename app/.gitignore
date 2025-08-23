@@ -1,2 +1,4 @@
 /build
-/release
+release/baselineProfiles
+src/androidTest
+src/test

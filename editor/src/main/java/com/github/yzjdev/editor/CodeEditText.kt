@@ -14,16 +14,32 @@ import android.text.TextUtils
 import android.util.AttributeSet
 import android.util.Log
 import android.view.GestureDetector
+import android.view.Gravity
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.ExtractedText
-import android.view.inputmethod.ExtractedTextRequest
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputMethodManager
+import android.widget.LinearLayout
+import android.widget.PopupWindow
 import android.widget.Scroller
+import android.widget.TextView
 import android.widget.Toast
+import androidx.core.view.setPadding
+import com.github.yzjdev.editor.ext.getLineEnd
+import com.github.yzjdev.editor.ext.getLineStart
+import com.github.yzjdev.editor.ext.getLineText
+import com.github.yzjdev.editor.ext.getRealLineLength
+import com.github.yzjdev.editor.ext.isBaiduInput
+import com.github.yzjdev.editor.ext.isSougouInput
+import com.github.yzjdev.editor.ext.isXunfeiInput
+import com.github.yzjdev.editor.inputmethod.BaiduInputConnection
+import com.github.yzjdev.editor.inputmethod.EditableInputConnection
+import com.github.yzjdev.editor.inputmethod.SougouInputConnection
+import com.github.yzjdev.editor.inputmethod.XunfeiInputConnection
+import com.github.yzjdev.utils.Utils
 import com.github.yzjdev.utils.dp
 import com.github.yzjdev.utils.sp
 import org.eclipse.jface.text.Document
@@ -31,103 +47,35 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
-class CodeEditText : View {
+class CodeEditText : View, Editor {
     val TAG = "aaa"
 
-    constructor(context: Context) : super(context)
-    constructor(context: Context, attrs: AttributeSet) : super(context, attrs)
+    constructor(context: Context) : this(context, null)
+    constructor(context: Context, attrs: AttributeSet?) : super(context, attrs)
+
 
     var doc = Document()
     val imm = context.getSystemService(InputMethodManager::class.java)
-    private val inputConnection = CodeInputConnection(this)
+    var inputConnection = EditableInputConnection(this)
+
+    val scroller = Scroller(context)
+    val gestureDetector = GestureDetector(Utils.context, GestureListener(this))
+
 
     //光标与选区
+    var isShiftOn: Boolean = false
     var cursor: Int = 0
     var selectionStart: Int = cursor
     var selectionEnd: Int = cursor
+    val minSelection: Int get() = min(selectionStart, selectionEnd)
+    val maxSelection: Int get() = max(selectionStart, selectionEnd)
+    var extractedRequestToken: Int = 0
 
-    var extractedTextRequest: ExtractedTextRequest? = null
 
-    var isShiftOn: Boolean = false
-    private var textMaxWidth = 0
-    private val scroller = Scroller(context)
-    private val gestureDetector =
-        GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
-            override fun onDown(e: MotionEvent): Boolean {
-                if (!scroller.isFinished) {
-                    scroller.abortAnimation()
-                }
-                return true
-            }
+    var baseTextSize = 20f.sp
+    var textMaxWidth = width
 
-            override fun onSingleTapUp(e: MotionEvent): Boolean {
-                requestFocus()
-                imm.showSoftInput(this@CodeEditText, InputMethodManager.SHOW_IMPLICIT)
-
-                val x = e.x + scrollX - lineNumberPanelWidth
-                val y = e.y + scrollY
-                val line = min(lineCount - 1, (y / lineHeight).toInt())
-                val lineStart = doc.getLineStart(line)
-                val lineLength = doc.getRealLineLength(line)
-                val s = doc.get(lineStart, lineLength)
-                var column = 0
-                if (x >= measureText(s)) {
-                    column = lineLength
-                } else {
-                    // 找到列号（测量字符宽度）
-                    var currentWidth = 0f
-                    for (i in s.indices) {
-                        val charWidth = measureText(s[i].toString())
-                        if (currentWidth + charWidth / 2 >= x) {
-                            break
-                        }
-                        currentWidth += charWidth
-                        column++
-                    }
-                }
-                // 计算最终光标位置
-                cursor = lineStart + column
-                selectionStart = cursor
-                selectionEnd = cursor
-                if (isShiftOn) {
-                    isShiftOn = false
-                }
-                updateImm()
-                scrollToVisible()
-                invalidate()
-                return true
-            }
-
-            override fun onScroll(
-                e1: MotionEvent?, e2: MotionEvent, distanceX: Float, distanceY: Float
-            ): Boolean {
-                val newX = (scrollX + distanceX.toInt()).coerceIn(0, getMaxScrollX)
-                val newY = (scrollY + distanceY.toInt()).coerceIn(0, getMaxScrollY)
-                scrollTo(newX, newY)
-                postInvalidate()
-                return true
-            }
-
-            override fun onFling(
-                e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float
-            ): Boolean {
-                scroller.fling(
-                    scrollX,
-                    scrollY,
-                    (-velocityX).toInt(),
-                    (-velocityY).toInt(),
-                    0,
-                    getMaxScrollX,
-                    0,
-                    getMaxScrollY
-                )
-                postInvalidate()
-                return true
-            }
-        })
-
-    private var baseTextSize = 20f.sp
-
+    //画笔
     val lineNumberBackgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.LTGRAY
         alpha = 100
@@ -271,8 +219,8 @@ class CodeEditText : View {
         val lineA = doc.getLineOfOffset(a)
         val lineB = doc.getLineOfOffset(b)
 
-        if (lineB <= visibleStartLine) return
-        if (lineA >= visibleEndLine) return
+        if (lineB < visibleStartLine) return
+        if (lineA > visibleEndLine) return
         val lineStartA = doc.getLineStart(lineA)
         val lineStartB = doc.getLineStart(lineB)
         val xA =
@@ -336,6 +284,13 @@ class CodeEditText : View {
         outAttrs.initialSelStart = selectionStart
         outAttrs.initialSelEnd = selectionEnd
         outAttrs.inputType = InputType.TYPE_CLASS_TEXT
+        if (context.isSougouInput) {
+            inputConnection = SougouInputConnection(this)
+        } else if (context.isXunfeiInput) {
+            inputConnection = XunfeiInputConnection(this)
+        } else if (context.isBaiduInput) {
+            inputConnection = BaiduInputConnection(this)
+        }
         return inputConnection
     }
 
@@ -352,7 +307,7 @@ class CodeEditText : View {
     }
 
     /**
-     * 一些get  set  实现
+     * 一些常用方法get  set  实现
      */
     var text: String
         set(value) {
@@ -382,7 +337,7 @@ class CodeEditText : View {
             invalidate()
         }
 
-    private val lineNumberPanelWidth: Int
+    val lineNumberPanelWidth: Int
         get() = lineNumberWidth + lineNumberPadding
 
     val lineHeight: Int
@@ -401,9 +356,9 @@ class CodeEditText : View {
     private val contentHeight: Int
         get() = max(height, (lineHeight * lineCount).toInt())
 
-    private val getMaxScrollX: Int
+    val maxScrollX: Int
         get() = max(0, contentWidth - width / 2)
-    private val getMaxScrollY: Int
+    val maxScrollY: Int
         get() = max(0, contentHeight - height / 2)
 
 
@@ -439,10 +394,16 @@ class CodeEditText : View {
         return false
     }
 
-
     fun handleKeyDown(event: KeyEvent): Boolean {
+        Log.d(TAG, "handleKeyDown: $event")
         when (event.keyCode) {
-            KeyEvent.KEYCODE_SHIFT_LEFT -> isShiftOn = true
+            KeyEvent.KEYCODE_DPAD_LEFT,
+            KeyEvent.KEYCODE_DPAD_RIGHT,
+            KeyEvent.KEYCODE_DPAD_UP,
+            KeyEvent.KEYCODE_DPAD_DOWN -> isShiftOn = event.isShiftPressed
+
+            KeyEvent.KEYCODE_SHIFT_LEFT,
+            KeyEvent.KEYCODE_SHIFT_RIGHT -> isShiftOn = true
         }
         return when (event.keyCode) {
             KeyEvent.KEYCODE_DEL -> {
@@ -497,42 +458,29 @@ class CodeEditText : View {
     /**
      * imm 实现
      */
-
     fun updateImm() {
         updateImmSelection()
+//        updateImmAnchorInfo()
         updateImmExtractedText()
+
     }
 
     fun updateImmSelection() {
         imm.updateSelection(this, selectionStart, selectionEnd, -1, -1)
     }
 
-
     fun updateImmExtractedText() {
-        val et = ExtractedText()
-        extractedText(et)
-        imm.updateExtractedText(this, extractedTextRequest?.token ?: 0, et)
-
+        imm.updateExtractedText(this, extractedRequestToken, getExtractedText())
     }
 
-    fun extractedText(et: ExtractedText): ExtractedText {
-        val isBaidu = inputConnection.isBaiduInput
-        // 处理百度输入法
-        if (isBaidu) {
-            et.text = text
-            et.selectionStart = minSelection
-            et.selectionEnd = maxSelection
-            if (isShiftOn) et.flags = et.flags or ExtractedText.FLAG_SELECTING
-            return et
-        }
-
-        // 处理非百度输入法的文本提取
-        et.text = "text"
-        // 设置选择范围
+    fun getExtractedText(): ExtractedText {
+        val et = ExtractedText()
+        val maxChars = inputConnection.maxChars
+        et.text = if (length > maxChars) text.substring(0, maxChars) else text
+        et.startOffset = 0
         et.selectionStart = minSelection
         et.selectionEnd = maxSelection
         if (isShiftOn) et.flags = et.flags or ExtractedText.FLAG_SELECTING
-
         return et
     }
 
@@ -575,7 +523,7 @@ class CodeEditText : View {
         if (cursorTop < visibleTop) {
             targetY = cursorTop.toInt()
         } else if (cursorBottom > visibleBottom) {
-            targetY = (cursorBottom - rect.height() + lineHeight).toInt()
+            targetY = (cursorBottom - rect.height() + lineHeight + height / 2)
         }
 
 
@@ -602,15 +550,12 @@ class CodeEditText : View {
     /**
      * 光标移动实现
      */
-    enum class CursorAction {
-        ACTION_LEFT, ACTION_RIGHT, ACTION_UP, ACTION_DOWN
-    }
-
-    fun moveCursor(action: CursorAction) {
+    override fun moveCursor(action: CursorAction) {
         //防止光标越界
         when (action) {
             CursorAction.ACTION_LEFT, CursorAction.ACTION_UP -> if (cursor <= 0) return
             CursorAction.ACTION_RIGHT, CursorAction.ACTION_DOWN -> if (cursor >= length) return
+            else -> {}
         }
 
         val currentLine = doc.getLineOfOffset(cursor)
@@ -655,7 +600,18 @@ class CodeEditText : View {
                     nextLineStart + min(desiredColumn, nextLineLength)
                 }
             }
+
+            CursorAction.ACTION_HOME -> {
+                desiredColumn = -1
+                0
+            }
+
+            CursorAction.ACTION_END -> {
+                desiredColumn = -1
+                length
+            }
         }
+
         cursor = newCursor
         if (isShiftOn) {
             selectionEnd = newCursor
@@ -669,95 +625,70 @@ class CodeEditText : View {
 
     }
 
-    fun moveLeft() {
+    override fun moveLeft() {
         moveCursor(CursorAction.ACTION_LEFT)
     }
 
-    fun moveRight() {
+    override fun moveRight() {
         moveCursor(CursorAction.ACTION_RIGHT)
     }
 
     var desiredColumn = -1
-    fun moveUp() {
+    override fun moveUp() {
         moveCursor(CursorAction.ACTION_UP)
     }
 
-    fun moveDown() {
+    override fun moveDown() {
         moveCursor(CursorAction.ACTION_DOWN)
     }
 
-    fun moveHome() {
-        if (isShiftOn) {
-            cursor = 0
-            selectionEnd = 0
-        } else {
-            cursor = 0
-            selectionStart = 0
-            selectionEnd = 0
-        }
-        updateImm()
-        scrollToVisible()
-        invalidate()
+    override fun moveHome() {
+        moveCursor(CursorAction.ACTION_HOME)
     }
 
-    fun moveEnd() {
-        if (isShiftOn) {
-            cursor = length
-            selectionEnd = cursor
-        } else {
-            cursor = length
-            selectionStart = cursor
-            selectionEnd = cursor
-        }
-        updateImm()
-        scrollToVisible()
-        invalidate()
+    override fun moveEnd() {
+        moveCursor(CursorAction.ACTION_END)
     }
 
-    val isAllSelected: Boolean
-        get() = minSelection == 0 && maxSelection == length
-
-
-    fun selectAll() {
-
+    override fun selectAll() {
+        Log.d(TAG, "selectAll: ")
         isShiftOn = true
         cursor = length
         selectionStart = 0
         selectionEnd = length
-        Log.d(TAG, "selectAll: $minSelection   $maxSelection")
         updateImm()
         scrollToVisible()
         invalidate()
     }
 
-    fun copy() {
-        copy(getSelectedText())
-    }
-
-    fun copy(text: CharSequence?) {
-        if (text == null) return
+    override fun copy() {
+        Log.d(TAG, "copy: ")
+        if (selectionStart == selectionEnd) return
         try {
-            val clipboard = context.getSystemService(ClipboardManager::class.java)
-            val clip = ClipData.newPlainText("", text)
-            clipboard.setPrimaryClip(clip)
+            val text = doc.get(minSelection, maxSelection - minSelection)
+            val cm = context.getSystemService(ClipboardManager::class.java)
+            val clipData = ClipData.newPlainText("text", text)
+            cm.setPrimaryClip(clipData)
+            Toast.makeText(context, "复制成功", Toast.LENGTH_SHORT).show()
             isShiftOn = false
+            cursor = selectionEnd
             selectionStart = cursor
+            selectionEnd = cursor
             updateImm()
             invalidate()
-            Toast.makeText(context, "已写入剪切板", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
-            Toast.makeText(context, "字符太多了，无法写入剪切板", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "${length}个字符，你要撑死我吗", Toast.LENGTH_SHORT).show()
         }
-
     }
 
-    fun cut() {
-        val text = getSelectedText()
-        if (text == null) return
+    override fun cut() {
+        Log.d(TAG, "cut: ")
+        if (selectionStart == selectionEnd) return
         try {
-            val clipboard = context.getSystemService(ClipboardManager::class.java)
-            val clip = ClipData.newPlainText("", text)
-            clipboard.setPrimaryClip(clip)
+            val text = doc.get(minSelection, maxSelection - minSelection)
+            val cm = context.getSystemService(ClipboardManager::class.java)
+            val clipData = ClipData.newPlainText("text", text)
+            cm.setPrimaryClip(clipData)
             doc.replace(minSelection, maxSelection - minSelection, "")
             isShiftOn = false
             cursor = minSelection
@@ -766,29 +697,84 @@ class CodeEditText : View {
             updateImm()
             scrollToVisible()
             invalidate()
-            Toast.makeText(context, "已写入剪切板", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
-            Toast.makeText(context, "文本太大了，无法写入剪切板", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "${length}个字符，你要撑死我吗", Toast.LENGTH_SHORT).show()
         }
-
     }
 
-    fun paste() {
-        if (isShiftOn && selectionStart != selectionEnd) {
+    override fun paste() {
+        Log.d(TAG, "paste: ")
+        val cm = context.getSystemService(ClipboardManager::class.java)
+        val clipData = cm.primaryClip
+        val text = clipData?.getItemAt(0)?.text?.toString()
+        if (text.isNullOrEmpty()) return
+        doc.replace(minSelection, maxSelection - minSelection, text)
+        cursor = minSelection + text.length
+        selectionStart = cursor
+        selectionEnd = cursor
+        updateImm()
+        scrollToVisible()
+        invalidate()
+    }
+
+    override fun insert(text: CharSequence) {
+        if (isShiftOn) {
+            doc.replace(minSelection, maxSelection - minSelection, text.toString())
+            isShiftOn = false
+            cursor = minSelection + text.length
+            selectionStart = cursor
+            selectionEnd = cursor
+            updateImm()
+            scrollToVisible()
+            invalidate()
+        } else {
+            if (text.isNotEmpty()) {
+                doc.replace(cursor, 0, text.toString())
+                cursor = cursor + text.length
+                selectionStart = cursor
+                selectionEnd = cursor
+                updateImm()
+                scrollToVisible()
+                invalidate()
+            }
+        }
+    }
+
+    override fun delete() {
+        if (isShiftOn) {
             doc.replace(minSelection, maxSelection - minSelection, "")
+            isShiftOn = false
             cursor = minSelection
             selectionStart = cursor
             selectionEnd = cursor
+            updateImm()
+            scrollToVisible()
+            invalidate()
+        } else {
+            if (cursor <= 0) return
+            doc.replace(cursor - 1, 1, "")
+            cursor = cursor - 1
+            selectionStart = cursor
+            selectionEnd = cursor
+            updateImm()
+            scrollToVisible()
+            invalidate()
         }
-        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        if (clipboard.hasPrimaryClip()) {
-            val clipData = clipboard.primaryClip
-            if (clipData != null && clipData.itemCount > 0) {
-                val text = clipData.getItemAt(0).coerceToText(context).toString()
-                // 在这里处理粘贴，例如插入到 EditText
-                insert(text)
-            }
-        }
+    }
+
+    override fun deleteAfter() {
+        if (cursor >= length) return
+        doc.replace(cursor, 1, "")
+        updateImmExtractedText()
+        invalidate()
+    }
+
+    override fun undo() {
+
+    }
+
+    override fun redo() {
+
     }
 
     fun getSelectedText(): CharSequence? {
@@ -798,64 +784,173 @@ class CodeEditText : View {
         return TextUtils.substring(text, a, b)
     }
 
-    val minSelection: Int get() = min(selectionStart, selectionEnd)
-    val maxSelection: Int get() = max(selectionStart, selectionEnd)
+}
 
-    /**
-     * 文本插入
-     * 如果是选择状态，删除选择文本，插入新的文本
-     */
-    fun insert(text: String) {
-        if (isShiftOn) {
-            val a = min(selectionStart, selectionEnd)
-            val b = max(selectionStart, selectionEnd)
-            if (a != b) doc.replace(a, b - a, "")
-            cursor = a
-            selectionStart = a
-            selectionEnd = a
-        }
-        doc.replace(cursor, 0, text)
-        cursor += text.length
-        selectionStart = cursor
-        selectionEnd = cursor
-        updateImm()
-        scrollToVisible()
-        invalidate()
+
+class ActionTextView @JvmOverloads constructor(
+    context: Context,
+    attrs: AttributeSet? = null,
+    defStyleAttr: Int = 0
+) : androidx.appcompat.widget.AppCompatTextView(context, attrs, defStyleAttr) {
+
+    init {
+        // 默认样式
+        setPadding(4.dp)
     }
 
-
-    /**
-     * 删除文本
-     */
-    fun delete() {
-        if (length == 0) return
-
-        // 计算删除区间
-        val (delStart, delEnd) = run {
-            val s = minSelection
-            val e = maxSelection
-            when {
-                s != e -> s to e // 有选中
-                s > 0 -> {
-                    val line = doc.getLineOfOffset(s)
-                    val lineStart = doc.getLineStart(line)
-                    val prevLen =
-                        if (s == lineStart && line > 0) doc.getLineDelimiter(line - 1).length else 1
-                    (s - prevLen) to s
-                }
-
-                else -> return // 光标在最开始，无可删除内容
-            }
-        }
-
-        doc.replace(delStart, delEnd - delStart, "")
-        isShiftOn = false
-        cursor = delStart
-        selectionStart = cursor
-        selectionEnd = cursor
-        updateImm()
-        scrollToVisible()
-        invalidate()
+    // 额外的辅助构造，方便在代码里直接用
+    constructor(context: Context, text: String, block: () -> Unit) : this(context) {
+        setText(text)
+        setOnClickListener { block() }
     }
 }
 
+
+class GestureListener(val editor: CodeEditText) : GestureDetector.SimpleOnGestureListener() {
+
+    var popup: PopupWindow? = null
+    fun showActionMenu(e: MotionEvent) {
+        editor.apply {
+            // 如果 PopupWindow 已存在且正在显示，直接返回
+            if (popup?.isShowing == true) {
+                return
+            }
+            // 获取视图相对于窗口的位置
+            val location = IntArray(2)
+            editor.getLocationInWindow(location)
+
+            // 获取点击位置相对于视图的坐标
+            val viewX = e.x.toInt()
+            val viewY = e.y.toInt()
+
+            // 计算点击位置所在行号
+            val line = min(lineCount - 1, (viewY / lineHeight))  // 基于 Y 坐标计算行号
+
+            val actionViews = mutableListOf<TextView>()
+            actionViews.add(ActionTextView(context, "全选") { selectAll() })
+            actionViews.add(ActionTextView(context, "复制") { copy() })
+            actionViews.add(ActionTextView(context, "剪切") { cut() })
+            actionViews.add(ActionTextView(context, "粘贴") { paste() })
+
+            // 获取菜单视图
+            val view = LinearLayout(context)
+            view.apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(4.dp)
+                setBackgroundColor(Color.WHITE)
+            }
+            actionViews.forEach {
+                view.addView(it)
+            }
+
+            // 创建 PopupWindow
+            popup = PopupWindow(view, -2, -2)
+
+            // 确保view已布局完成，获取其宽度和高度
+            view.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
+            val menuWidth = view.measuredWidth
+            val menuHeight = view.measuredHeight
+            // 计算该行的顶部位置
+            val lineTop = line * lineHeight
+            // 计算 PopupWindow 的 X 和 Y 坐标
+            val xPos = (location[0] + viewX - menuWidth / 2).toInt() // 居中显示
+            val yPos = location[1] + lineTop - menuHeight // 显示在该行的顶部
+            // 显示 PopupWindow
+            popup?.showAtLocation(editor, Gravity.NO_GRAVITY, xPos, yPos)
+        }
+    }
+
+
+    override fun onDown(e: MotionEvent): Boolean {
+        editor.apply {
+            if (!scroller.isFinished) {
+                scroller.abortAnimation()
+            }
+        }
+        return true
+    }
+
+    override fun onSingleTapUp(e: MotionEvent): Boolean {
+        editor.apply {
+            popup?.dismiss()
+            requestFocus()
+            imm.showSoftInput(this, InputMethodManager.SHOW_IMPLICIT)
+
+            val x = e.x + scrollX - lineNumberPanelWidth
+            val y = e.y + scrollY
+            val line = min(lineCount - 1, (y / lineHeight).toInt())
+            val lineStart = doc.getLineStart(line)
+            val lineLength = doc.getRealLineLength(line)
+            val s = doc.get(lineStart, lineLength)
+            var column = 0
+            if (x >= measureText(s)) {
+                column = lineLength
+            } else {
+                // 找到列号（测量字符宽度）
+                var currentWidth = 0f
+                for (i in s.indices) {
+                    val charWidth = measureText(s[i].toString())
+                    if (currentWidth + charWidth / 2 >= x) {
+                        break
+                    }
+                    currentWidth += charWidth
+                    column++
+                }
+            }
+            // 计算最终光标位置
+            desiredColumn = column
+            cursor = lineStart + column
+            selectionStart = cursor
+            selectionEnd = cursor
+            if (isShiftOn) {
+                isShiftOn = false
+            }
+            updateImm()
+            scrollToVisible()
+            invalidate()
+        }
+        return true
+    }
+
+    override fun onScroll(
+        e1: MotionEvent?, e2: MotionEvent, distanceX: Float, distanceY: Float
+    ): Boolean {
+        editor.apply {
+            val newX = (scrollX + distanceX.toInt()).coerceIn(0, maxScrollX)
+            val newY = (scrollY + distanceY.toInt()).coerceIn(0, maxScrollY)
+            scrollTo(newX, newY)
+            postInvalidate()
+        }
+        return true
+    }
+
+
+    override fun onLongPress(e: MotionEvent) {
+        super.onLongPress(e)
+        showActionMenu(e)
+    }
+
+    override fun onDoubleTap(e: MotionEvent): Boolean {
+        showActionMenu(e)
+        return true
+    }
+
+    override fun onFling(
+        e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float
+    ): Boolean {
+        editor.apply {
+            scroller.fling(
+                scrollX,
+                scrollY,
+                (-velocityX).toInt(),
+                (-velocityY).toInt(),
+                0,
+                maxScrollX,
+                0,
+                maxScrollY
+            )
+            postInvalidate()
+        }
+        return true
+    }
+}

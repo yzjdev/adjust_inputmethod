@@ -13,11 +13,81 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content" />
 
-    <com.github.yzjdev.editor.CodeEditText
-        android:id="@+id/editor"
+  <FrameLayout
+      android:layout_weight="1"
+      android:layout_width="match_parent"
+      android:layout_height="match_parent">
+      <com.github.yzjdev.editor.CodeEditText
+          android:id="@+id/editor"
+          android:layout_width="match_parent"
+          android:layout_height="match_parent"/>
+  </FrameLayout>
+
+    <TableLayout
+        android:stretchColumns="*"
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1" />
+        android:layout_height="wrap_content">
+        <TableRow
+            android:id="@+id/row"
+            android:padding="4dp">
+            <TextView
+                android:gravity="center"
+                android:padding="4dp"
+                android:text="Home"
+                />
+            <TextView
+                android:gravity="center"
+                android:padding="4dp"
+                android:text="End"
+
+                />
+            <TextView
+                android:gravity="center"
+                android:padding="4dp"
+                android:text="←"
+
+                />
+
+            <TextView
+                android:gravity="center"
+                android:padding="4dp"
+                android:text="↑"
+                />
+
+            <TextView
+                android:gravity="center"
+                android:padding="4dp"
+                android:text="→"
+                />
+
+            <TextView
+                android:gravity="center"
+                android:padding="4dp"
+                android:text="↓"
+                />
+
+        </TableRow>
+        <TableRow
+            android:id="@+id/row2"
+            android:padding="4dp">
+            <TextView
+                android:gravity="center"
+                android:padding="4dp"
+                android:text="Ctrl"
+                />
+            <TextView
+                android:gravity="center"
+                android:padding="4dp"
+                android:text="Shift"
+                />
+            <TextView
+                android:gravity="center"
+                android:padding="4dp"
+                android:text="Alt"
+
+                />
 
 
+        </TableRow>
+    </TableLayout>
 </LinearLayout>

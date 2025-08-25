@@ -19,7 +19,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "My Application"
+rootProject.name = "MyProjects"
 include(":app")
 include(":jfacetext")
 include(":editor")

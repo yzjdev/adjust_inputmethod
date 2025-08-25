@@ -12,6 +12,7 @@ android {
         minSdk = 26
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles("consumer-rules.pro")
+
     }
 
     buildTypes {
@@ -23,6 +24,7 @@ android {
             )
         }
     }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
@@ -33,7 +35,6 @@ android {
 }
 
 dependencies {
-
     implementation(project(":utils"))
     implementation(project(":jfacetext"))
     implementation(libs.androidx.core.ktx)

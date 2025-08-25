@@ -43,9 +43,12 @@ import com.github.yzjdev.utils.Utils
 import com.github.yzjdev.utils.dp
 import com.github.yzjdev.utils.sp
 import org.eclipse.jface.text.Document
+import org.eclipse.jface.text.DocumentEvent
+import org.eclipse.jface.text.IDocumentListener
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+
 
 class CodeEditText : View, Editor {
     val TAG = "aaa"
@@ -53,19 +56,14 @@ class CodeEditText : View, Editor {
     constructor(context: Context) : this(context, null)
     constructor(context: Context, attrs: AttributeSet?) : super(context, attrs)
 
-    init {
-        viewTreeObserver.addOnGlobalLayoutListener {
-            if (imm.isActive(this)) scrollToVisible()
-        }
-    }
 
     var doc = Document()
+
     val imm = context.getSystemService(InputMethodManager::class.java)
     var inputConnection = EditableInputConnection(this)
 
     val scroller = Scroller(context)
     val gestureDetector = GestureDetector(Utils.context, GestureListener(this))
-
 
     //光标与选区
     var isShiftOn: Boolean = false
@@ -112,7 +110,6 @@ class CodeEditText : View, Editor {
     val selectionPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.BLUE
         alpha = 30
-
     }
 
     val paintList = mutableListOf(
@@ -132,8 +129,22 @@ class CodeEditText : View, Editor {
             it.textSize = baseTextSize
             it.typeface = Typeface.createFromAsset(context.assets, "JetBrainsMono-Regular.ttf")
         }
-    }
 
+        viewTreeObserver.addOnGlobalLayoutListener {
+            if (imm.isActive(this)) scrollToVisible()
+        }
+
+        doc.addDocumentListener(object : IDocumentListener {
+            override fun documentAboutToBeChanged(event: DocumentEvent?) {}
+            override fun documentChanged(event: DocumentEvent?) {
+                event ?: return
+                val offset = event.offset        // 变动起始
+                val length = event.length        // 删除长度
+                val newText = event.text ?: ""   // 新插入文本
+
+            }
+        })
+    }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)

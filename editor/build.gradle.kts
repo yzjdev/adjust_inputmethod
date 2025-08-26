@@ -35,6 +35,7 @@ android {
 }
 
 dependencies {
+    implementation("org.antlr:antlr4-runtime:4.13.2")
     implementation(project(":utils"))
     implementation(project(":jfacetext"))
     implementation(libs.androidx.core.ktx)
